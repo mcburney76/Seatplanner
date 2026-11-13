@@ -1,20 +1,39 @@
-# SeatPlanner: working browser prototype
-
-Open `index.html` in a browser to use the prototype. It supports restaurant, cinema, vehicle, and event layouts; adding/removing guests; random seating; self-selection; organizer-controlled assignments; seat locking; text sharing; and saving on the current device.
-
-## What works
-- Seating plans are interactive, and shuffling preserves locked assignments.
-- Sharing sends a **text summary**, not a live collaborative room.
-- Save stores the plan in that browser's localStorage.
-- No external dependencies or accounts are required.
-
-## Not yet implemented
-- Live multiplayer, invitation URLs, authentication, server database, access control, Fair Rotation history, ad integration, subscriptions, and native app packaging.
-- Organizer mode is a UI workflow, not secure permission enforcement.
-- For safety, production vehicle mode must reserve the driver's seat for a licensed driver and account for child restraint requirements.
-
-## Run locally
-`python3 -m http.server 8000` in this directory, then visit `http://localhost:8000`.
-
-## Production path
-Use a hosted backend (e.g., Supabase/Postgres) with rooms, participants, seats, assignments, roles, and invitation tokens. Enforce unique occupancy and permissions in database transactions, not just the browser. Add realtime subscriptions, sign-in for organizers, anonymous guest tokens, and server-validated seat locks. Then add PWA installation, payments, and advertising only after the core multiplayer experience is tested.
+'use strict';
+const $=id=>document.getElementById(id);
+const layouts={restaurant:[['Round table (8)',8,4],['Booth (6)',6,3],['Long table (12)',12,6],['Large table (16)',16,8]],movie:[['One row (8)',8,8],['Two rows (16)',16,8],['Three rows (24)',24,8]],car:[['Sedan (5)',5,2],['SUV (7)',7,3],['Van (8)',8,3]],event:[['One row (10)',10,10],['Two rows (20)',20,10],['Four rows (32)',32,8]]};
+let state={event:'Friday Night Out',venue:'restaurant',layout:0,people:['Alex','Jordan','Taylor','Morgan','Casey','Riley'],assign:{},locks:[],mode:'random',selected:'Alex'};
+const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const config=()=>layouts[state.venue][state.layout];
+const indexes=()=>Array.from({length:config()[1]},(_,i)=>i);
+function seatName(i){if(state.venue==='car'){const c=config()[1];const names=c===5?['Driver','Front passenger','Rear left','Rear middle','Rear right']:c===7?['Driver','Front passenger','Middle left','Middle right','Rear left','Rear middle','Rear right']:['Driver','Front passenger','Middle left','Middle center','Middle right','Rear left','Rear middle','Rear right'];return names[i]}return state.venue==='restaurant'?`Seat ${i+1}`:`Row ${Math.floor(i/config()[2])+1} · Seat ${i%config()[2]+1}`}
+function reset(){state.assign={};state.locks=[];render()}
+function renderLayouts(){$('layout').innerHTML=layouts[state.venue].map(([name],i)=>`<option value="${i}">${escapeHTML(name)}</option>`).join('');$('layout').value=state.layout}
+function render(){
+ $('event').value=state.event;$('venue').value=state.venue;renderLayouts();$('count').textContent=`${state.people.length} people`;
+ $('people').innerHTML=state.people.map((p,i)=>`<span class="chip">${escapeHTML(p)} <button data-remove="${i}" aria-label="Remove ${escapeHTML(p)}">×</button></span>`).join('');
+ if(!state.people.includes(state.selected))state.selected=state.people[0]||'';
+ $('picker').innerHTML=state.people.map(p=>`<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join('');$('picker').value=state.selected;
+ $('pickerWrap').hidden=state.mode==='random';document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('selected',b.dataset.mode===state.mode));
+ $('instructions').textContent={random:'Shuffle everyone into seats. Locked assignments stay put.',self:'Select your name, then tap an empty seat.',organizer:'Select a guest and tap an empty seat to assign them.'}[state.mode];
+ $('shuffle').textContent=state.mode==='random'?'Shuffle seats':'Fill remaining seats';
+ $('map').style.gridTemplateColumns=`repeat(${config()[2]},minmax(0,1fr))`;
+ $('map').innerHTML=indexes().map(i=>`<button class="seat ${state.assign[i]?'taken':''} ${state.locks.includes(i)?'locked':''}" data-seat="${i}" aria-label="${escapeHTML(seatName(i))}${state.assign[i]?', '+escapeHTML(state.assign[i]):', empty'}"><small>${escapeHTML(seatName(i))}</small><strong>${state.assign[i]?escapeHTML(state.assign[i]):'+'}</strong>${state.locks.includes(i)?'<small>🔒</small>':''}</button>`).join('');
+ const count=Object.keys(state.assign).length;$('status').textContent=`${count} assigned · ${config()[0]}`;
+ $('results').innerHTML=indexes().filter(i=>state.assign[i]).map(i=>`<div class="result"><span>${escapeHTML(seatName(i))}</span><b>${escapeHTML(state.assign[i])} ${state.locks.includes(i)?'🔒':''}</b></div>`).join('')||'<p class="hint">No seats assigned yet.</p>';
+}
+function shuffle(){const fixed=new Set(state.locks.filter(i=>state.assign[i]));const free=indexes().filter(i=>!fixed.has(i));const keep=new Set([...fixed].map(i=>state.assign[i]));const pool=state.people.filter(p=>!keep.has(p));for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]]}free.forEach((seat,i)=>{if(i<pool.length)state.assign[seat]=pool[i];else delete state.assign[seat]});render()}
+function toggleLock(i){state.locks=state.locks.includes(i)?state.locks.filter(k=>k!==i):[...state.locks,i]}
+function clickSeat(i){const current=state.assign[i];if(state.mode==='random'){if(current)toggleLock(i);else{const available=state.people.find(p=>!Object.values(state.assign).includes(p));if(available)state.assign[i]=available}}else if(!state.selected)return;else if(state.mode==='organizer'&&current&&current!==state.selected)toggleLock(i);else if(current===state.selected){delete state.assign[i];state.locks=state.locks.filter(k=>k!==i)}else if(!current){for(const key of Object.keys(state.assign))if(state.assign[key]===state.selected){delete state.assign[key];state.locks=state.locks.filter(k=>k!==Number(key))}state.assign[i]=state.selected;if(state.mode==='organizer')state.locks.push(i)}else $('feedback').textContent='Seat occupied. Choose an empty one.';render()}
+function summary(){return `${state.event}\n${config()[0]}\n\n${indexes().filter(i=>state.assign[i]).map(i=>`${seatName(i)}: ${state.assign[i]}`).join('\n')}`}
+$('event').addEventListener('input',e=>state.event=e.target.value);
+$('venue').addEventListener('change',e=>{state.venue=e.target.value;state.layout=0;reset()});$('layout').addEventListener('change',e=>{state.layout=Number(e.target.value);reset()});
+function addPerson(){const p=$('name').value.trim();if(!p)return;if(state.people.some(x=>x.toLowerCase()===p.toLowerCase())){$('feedback').textContent='Name already added.';return}state.people.push(p);$('name').value='';render()}
+$('add').addEventListener('click',addPerson);$('name').addEventListener('keydown',e=>{if(e.key==='Enter')addPerson()});
+$('people').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(!b)return;const name=state.people.splice(Number(b.dataset.remove),1)[0];for(const k of Object.keys(state.assign))if(state.assign[k]===name){delete state.assign[k];state.locks=state.locks.filter(i=>i!==Number(k))}render()});
+document.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{state.mode=b.dataset.mode;render()}));$('picker').addEventListener('change',e=>state.selected=e.target.value);
+$('map').addEventListener('click',e=>{const b=e.target.closest('[data-seat]');if(b)clickSeat(Number(b.dataset.seat))});$('shuffle').addEventListener('click',shuffle);$('clear').addEventListener('click',reset);$('lock').addEventListener('click',()=>{state.locks=Object.keys(state.assign).map(Number);render()});
+$('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(summary());$('feedback').textContent='Copied to clipboard.'}catch{$('feedback').textContent='Clipboard requires HTTPS. You can select and copy the list above.'}});
+$('share').addEventListener('click',async()=>{if(navigator.share){try{await navigator.share({title:state.event,text:summary()})}catch{}}else $('copy').click()});
+$('save').addEventListener('click',()=>{try{localStorage.setItem('seatplanner-v1',JSON.stringify(state));$('feedback').textContent='Saved on this device.'}catch{$('feedback').textContent='Unable to save in this browser.'}});
+try{const saved=JSON.parse(localStorage.getItem('seatplanner-v1'));if(saved&&layouts[saved.venue]?.[saved.layout]&&Array.isArray(saved.people)&&saved.assign&&Array.isArray(saved.locks))state=saved}catch{}
+render();
