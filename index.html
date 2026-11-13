@@ -1,0 +1,20 @@
+# SeatPlanner: working browser prototype
+
+Open `index.html` in a browser to use the prototype. It supports restaurant, cinema, vehicle, and event layouts; adding/removing guests; random seating; self-selection; organizer-controlled assignments; seat locking; text sharing; and saving on the current device.
+
+## What works
+- Seating plans are interactive, and shuffling preserves locked assignments.
+- Sharing sends a **text summary**, not a live collaborative room.
+- Save stores the plan in that browser's localStorage.
+- No external dependencies or accounts are required.
+
+## Not yet implemented
+- Live multiplayer, invitation URLs, authentication, server database, access control, Fair Rotation history, ad integration, subscriptions, and native app packaging.
+- Organizer mode is a UI workflow, not secure permission enforcement.
+- For safety, production vehicle mode must reserve the driver's seat for a licensed driver and account for child restraint requirements.
+
+## Run locally
+`python3 -m http.server 8000` in this directory, then visit `http://localhost:8000`.
+
+## Production path
+Use a hosted backend (e.g., Supabase/Postgres) with rooms, participants, seats, assignments, roles, and invitation tokens. Enforce unique occupancy and permissions in database transactions, not just the browser. Add realtime subscriptions, sign-in for organizers, anonymous guest tokens, and server-validated seat locks. Then add PWA installation, payments, and advertising only after the core multiplayer experience is tested.
